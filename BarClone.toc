@@ -10,4 +10,5 @@
 ## IconTexture: Interface\Icons\INV_Misc_Book_09
 
 BarClone.lua
+BarClone_Serialize.lua
 BarClone_UI.lua

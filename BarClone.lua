@@ -478,6 +478,8 @@ local function ShowHelp()
     Print("  /bc load <name>  - load <name> onto your bars")
     Print("  /bc delete <name>  - delete <name>")
     Print("  /bc list  - list all profiles")
+    Print("  /bc export <name>  - show a code you can paste on another account")
+    Print("  /bc import  - open the import window to paste a code")
 end
 
 SLASH_BARCLONE1 = "/barclone"
@@ -496,6 +498,10 @@ SlashCmdList.BARCLONE = function(msg)
         ns.LoadProfile(rest)
     elseif cmd == "delete" or cmd == "del" then
         ns.DeleteProfile(rest)
+    elseif cmd == "export" then
+        if ns.ShowExport then ns.ShowExport(rest) end
+    elseif cmd == "import" then
+        if ns.ShowImport then ns.ShowImport() end
     elseif cmd == "list" then
         local names = ns.GetProfileNames(false)
         if #names == 0 then

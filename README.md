@@ -24,6 +24,8 @@ Open the window with `/bc` (or `/barclone`).
 - **Overwrite** replaces the selected profile with your current bars.
 - **Rename** renames the selected profile to whatever is in the name box.
 - **Delete** removes it.
+- **Export** shows a text code for the selected profile. **Import** accepts
+  one (see below).
 
 Slash commands do the same without the window:
 
@@ -31,8 +33,26 @@ Slash commands do the same without the window:
 /bc save <name>
 /bc load <name>
 /bc delete <name>
+/bc export <name>
+/bc import
 /bc list
 ```
+
+## Sharing across accounts
+
+Profiles are stored per WoW account, so a second account (or a friend) cannot
+see them directly. Export and Import bridge that gap:
+
+1. Select a profile and click **Export**. The code is pre-selected; press
+   Ctrl+C.
+2. On the other account, open BarClone, click **Import**, and press Ctrl+V.
+   The code is validated on the spot and the window shows the class and slot
+   counts it contains.
+3. Adjust the name if you like and click **Import**.
+
+Codes look like `BC1:...:...` and include a checksum, so a partial or mangled
+paste is rejected instead of importing garbage. Line breaks or spaces picked
+up along the way are ignored.
 
 ## Loading on another character
 

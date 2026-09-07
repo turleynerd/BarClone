@@ -5,7 +5,7 @@ local ADDON_NAME, ns = ...
 
 local NUM_ROWS = 12
 local ROW_HEIGHT = 20
-local FRAME_W, FRAME_H = 420, 500
+local FRAME_W, FRAME_H = 420, 530
 
 local selected -- currently selected profile name
 
@@ -230,6 +230,18 @@ overwriteBtn:SetPoint("LEFT", loadBtn, "RIGHT", 6, 0)
 local deleteBtn = MakeButton("Delete", 90)
 deleteBtn:SetPoint("LEFT", overwriteBtn, "RIGHT", 6, 0)
 
+local exportBtn = MakeButton("Export", 90)
+exportBtn:SetPoint("TOPLEFT", loadBtn, "BOTTOMLEFT", 0, -6)
+
+local importBtn = MakeButton("Import", 90)
+importBtn:SetPoint("LEFT", exportBtn, "RIGHT", 6, 0)
+
+local shareHint = frame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+shareHint:SetPoint("LEFT", importBtn, "RIGHT", 8, 0)
+shareHint:SetPoint("RIGHT", -20, 0)
+shareHint:SetJustifyH("LEFT")
+shareHint:SetText("Share codes across accounts")
+
 -- Options
 local function MakeCheck(name, label, optionKey, anchor, yOff)
     local cb = CreateFrame("CheckButton", name, frame, "UICheckButtonTemplate")
@@ -243,14 +255,14 @@ local function MakeCheck(name, label, optionKey, anchor, yOff)
     return cb
 end
 
-local clearCheck = MakeCheck("BarCloneClearCheck", "Clear slots that are empty in the profile", "clearBeforeLoad", loadBtn, -14)
+local clearCheck = MakeCheck("BarCloneClearCheck", "Clear slots that are empty in the profile", "clearBeforeLoad", exportBtn, -14)
 local macroCheck = MakeCheck("BarCloneMacroCheck", "Create macros this character is missing", "createMissingMacros", clearCheck, -2)
 
 local hint = frame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
 hint:SetPoint("BOTTOMLEFT", 20, 18)
 hint:SetPoint("RIGHT", -20, 0)
 hint:SetJustifyH("LEFT")
-hint:SetText("/bc save <name>, /bc load <name>, /bc delete <name>, /bc list")
+hint:SetText("/bc save|load|delete|export <name>, /bc import, /bc list")
 
 -------------------------------------------------------------------------------
 -- Actions
@@ -308,6 +320,13 @@ deleteBtn:SetScript("OnClick", function()
     StaticPopup_Show("BARCLONE_CONFIRM_DELETE", selected, nil, selected)
 end)
 
+exportBtn:SetScript("OnClick", function()
+    if not selected then return end
+    ns.ShowExport(selected)
+end)
+
+importBtn:SetScript("OnClick", function() ns.ShowImport() end)
+
 -------------------------------------------------------------------------------
 -- Refresh
 -------------------------------------------------------------------------------
@@ -354,6 +373,7 @@ function ns.RefreshUI()
     overwriteBtn:SetEnabled(hasSel)
     deleteBtn:SetEnabled(hasSel)
     renameBtn:SetEnabled(hasSel)
+    exportBtn:SetEnabled(hasSel)
 end
 
 frame:SetScript("OnShow", function()
@@ -375,3 +395,220 @@ end
 function ns.ShowUI()
     frame:Show()
 end
+
+-------------------------------------------------------------------------------
+-- Export / Import dialog
+-------------------------------------------------------------------------------
+StaticPopupDialogs["BARCLONE_CONFIRM_IMPORT_OVERWRITE"] = {
+    text = "A profile named |cffffff00%s|r already exists. Replace it with the imported one?",
+    button1 = YES,
+    button2 = NO,
+    OnAccept = function(self, data) ns.FinishImport(data.profile, data.name) end,
+    timeout = 0, whileDead = 1, hideOnEscape = 1, preferredIndex = 3,
+}
+
+local TEXT_W, TEXT_H = 480, 400
+
+local textFrame = CreateFrame("Frame", "BarCloneTextFrame", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+textFrame:SetSize(TEXT_W, TEXT_H)
+textFrame:SetPoint("CENTER", 0, 40)
+textFrame:SetFrameStrata("DIALOG")
+textFrame:SetFrameLevel(frame:GetFrameLevel() + 20)
+textFrame:SetMovable(true)
+textFrame:EnableMouse(true)
+textFrame:SetClampedToScreen(true)
+textFrame:RegisterForDrag("LeftButton")
+textFrame:SetScript("OnDragStart", textFrame.StartMoving)
+textFrame:SetScript("OnDragStop", textFrame.StopMovingOrSizing)
+textFrame:SetBackdrop({
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+    tile = true, tileSize = 32, edgeSize = 32,
+    insets = { left = 11, right = 12, top = 12, bottom = 11 },
+})
+textFrame:Hide()
+tinsert(UISpecialFrames, "BarCloneTextFrame")
+
+local tfTitleBg = textFrame:CreateTexture(nil, "ARTWORK")
+tfTitleBg:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Header")
+tfTitleBg:SetSize(300, 64)
+tfTitleBg:SetPoint("TOP", 0, 12)
+local tfTitle = textFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+tfTitle:SetPoint("TOP", tfTitleBg, "TOP", 0, -14)
+
+local tfClose = CreateFrame("Button", nil, textFrame, "UIPanelCloseButton")
+tfClose:SetPoint("TOPRIGHT", -5, -5)
+
+local tfHint = textFrame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+tfHint:SetPoint("TOPLEFT", 20, -34)
+tfHint:SetPoint("RIGHT", -20, 0)
+tfHint:SetJustifyH("LEFT")
+
+-- Text area
+local tfBox = CreateFrame("Frame", nil, textFrame, BackdropTemplateMixin and "BackdropTemplate" or nil)
+tfBox:SetPoint("TOPLEFT", 16, -58)
+tfBox:SetPoint("BOTTOMRIGHT", -16, 96)
+tfBox:SetBackdrop({
+    bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 12,
+    insets = { left = 3, right = 3, top = 3, bottom = 3 },
+})
+tfBox:SetBackdropColor(0, 0, 0, 0.6)
+tfBox:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+
+local tfScroll = CreateFrame("ScrollFrame", "BarCloneTextScroll", tfBox, "UIPanelScrollFrameTemplate")
+tfScroll:SetPoint("TOPLEFT", 8, -8)
+tfScroll:SetPoint("BOTTOMRIGHT", -28, 8)
+
+local tfEdit = CreateFrame("EditBox", "BarCloneTextEdit", tfScroll)
+tfEdit:SetMultiLine(true)
+tfEdit:SetAutoFocus(false)
+tfEdit:SetFontObject(ChatFontNormal)
+tfEdit:SetWidth(TEXT_W - 32 - 16 - 28)
+tfEdit:SetMaxLetters(0)
+tfEdit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+tfScroll:SetScrollChild(tfEdit)
+-- Clicking anywhere in the box focuses the edit box, even below the text.
+tfScroll:EnableMouse(true)
+tfScroll:SetScript("OnMouseDown", function() tfEdit:SetFocus() end)
+
+-- Import controls
+local tfStatus = textFrame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+tfStatus:SetPoint("BOTTOMLEFT", 20, 74)
+tfStatus:SetPoint("RIGHT", -20, 0)
+tfStatus:SetJustifyH("LEFT")
+
+local tfNameLabel = textFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+tfNameLabel:SetPoint("BOTTOMLEFT", 20, 46)
+tfNameLabel:SetText("Save as")
+
+local tfNameBox = CreateFrame("EditBox", "BarCloneImportNameBox", textFrame, "InputBoxTemplate")
+tfNameBox:SetSize(200, 22)
+tfNameBox:SetPoint("LEFT", tfNameLabel, "RIGHT", 10, 0)
+tfNameBox:SetAutoFocus(false)
+tfNameBox:SetMaxLetters(40)
+tfNameBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+
+local tfImportBtn = MakeButton("Import", 100, textFrame)
+tfImportBtn:SetPoint("BOTTOMRIGHT", -20, 40)
+
+local tfCloseBtn = MakeButton("Close", 80, textFrame)
+tfCloseBtn:SetPoint("BOTTOMRIGHT", -20, 16)
+tfCloseBtn:SetScript("OnClick", function() textFrame:Hide() end)
+
+local function SetImportWidgetsShown(shown)
+    tfStatus:SetShown(shown)
+    tfNameLabel:SetShown(shown)
+    tfNameBox:SetShown(shown)
+    tfImportBtn:SetShown(shown)
+end
+
+local function DescribeDecoded(p)
+    local _, _, _, hex = ns.ClassColor(p.class)
+    return ("|cff33ff99Valid:|r |cffffff00%s|r  %s%s|r  %d slots (%d spells, %d items, %d macros)%s"):format(
+        p.name, hex, p.classLocalized or p.class or "unknown class",
+        p.counts.total, p.counts.spell, p.counts.item, p.counts.macro,
+        p.character and ("  from " .. p.character) or "")
+end
+
+local function ValidateImportText()
+    if textFrame.mode ~= "import" then return end
+    local text = tfEdit:GetText()
+    textFrame.decoded = nil
+    if ns.Trim(text) == "" then
+        tfStatus:SetText("|cffaaaaaaPaste a BarClone export code into the box above (Ctrl+V).|r")
+        tfImportBtn:SetEnabled(false)
+        return
+    end
+    local profile, err = ns.DecodeProfile(text)
+    if profile then
+        textFrame.decoded = profile
+        tfStatus:SetText(DescribeDecoded(profile))
+        if ns.Trim(tfNameBox:GetText()) == "" or tfNameBox.autoFilled then
+            tfNameBox:SetText(profile.name)
+            tfNameBox.autoFilled = true
+        end
+        tfImportBtn:SetEnabled(true)
+    else
+        tfStatus:SetText("|cffff6060" .. tostring(err) .. "|r")
+        tfImportBtn:SetEnabled(false)
+    end
+end
+
+tfEdit:SetScript("OnTextChanged", function(self, userInput)
+    if userInput then ValidateImportText() end
+end)
+tfNameBox:SetScript("OnTextChanged", function(self, userInput)
+    if userInput then self.autoFilled = false end
+end)
+
+function ns.FinishImport(profile, name)
+    if ns.ImportProfile(profile, name) then
+        selected = ns.Trim(name)
+        textFrame:Hide()
+        if frame:IsShown() then ns.RefreshUI() end
+    end
+end
+
+tfImportBtn:SetScript("OnClick", function()
+    local profile = textFrame.decoded
+    if not profile then return end
+    local name, err = ns.ValidateName(tfNameBox:GetText())
+    if not name then
+        ns.Print(err)
+        return
+    end
+    if ns.GetProfile(name) then
+        StaticPopup_Show("BARCLONE_CONFIRM_IMPORT_OVERWRITE", name, nil, { profile = profile, name = name })
+    else
+        ns.FinishImport(profile, name)
+    end
+end)
+tfNameBox:SetScript("OnEnterPressed", function(self)
+    self:ClearFocus()
+    tfImportBtn:Click()
+end)
+
+function ns.ShowExport(name)
+    local code, err = ns.ExportProfile(name)
+    if not code then
+        ns.Print(err)
+        return
+    end
+    textFrame.mode = "export"
+    textFrame.decoded = nil
+    tfTitle:SetText("Export: " .. name)
+    tfHint:SetText("Press Ctrl+C to copy the code. Paste it into Import on any account or share it.")
+    SetImportWidgetsShown(false)
+    tfEdit:SetText(code)
+    tfEdit:SetCursorPosition(0)
+    textFrame:Show()
+    tfEdit:SetFocus()
+    tfEdit:HighlightText()
+end
+
+function ns.ShowImport()
+    textFrame.mode = "import"
+    textFrame.decoded = nil
+    tfTitle:SetText("Import profile")
+    tfHint:SetText("Paste an export code below. The profile is checked before anything is saved.")
+    SetImportWidgetsShown(true)
+    tfEdit:SetText("")
+    tfNameBox:SetText("")
+    tfNameBox.autoFilled = true
+    ValidateImportText()
+    textFrame:Show()
+    tfEdit:SetFocus()
+end
+
+-- Re-select everything when the export box regains focus so Ctrl+C always copies the full code.
+tfEdit:SetScript("OnEditFocusGained", function(self)
+    if textFrame.mode == "export" then self:HighlightText() end
+end)
+
+textFrame:SetScript("OnHide", function()
+    tfEdit:ClearFocus()
+    tfEdit:SetText("")
+    textFrame.decoded = nil
+end)
