@@ -3,18 +3,24 @@ const sharp = require("sharp");
 const fs = require("fs");
 
 const OUT_DIR = "E:/Games/World of Warcraft/_anniversary_/Interface/AddOns/BarClone/branding";
-const ICON = process.argv[2] || "icons/ability_warrior_savageblow.jpg";
+// Left icon (source) and right icon (target). Defaults: Mortal Strike -> Bloodthirst.
+const ICON_FROM = process.argv[2] || "icons/ability_warrior_savageblow.jpg";
+const ICON_TO = process.argv[3] || "icons/spell_nature_bloodlust.jpg";
 
 async function main() {
-  // Upscale the 56px icon cleanly and embed it as PNG.
-  const buf = await sharp(ICON)
-    .resize(256, 256, { kernel: sharp.kernel.lanczos3 })
-    .sharpen({ sigma: 0.8 })
-    .png()
-    .toBuffer();
-  const dataUri = "data:image/png;base64," + buf.toString("base64");
+  // Upscale the 56px icons cleanly and embed them as PNG.
+  const embed = async (file) => {
+    const buf = await sharp(file)
+      .resize(256, 256, { kernel: sharp.kernel.lanczos3 })
+      .sharpen({ sigma: 0.8 })
+      .png()
+      .toBuffer();
+    return "data:image/png;base64," + buf.toString("base64");
+  };
+  const iconFrom = await embed(ICON_FROM);
+  const iconTo = await embed(ICON_TO);
 
-  const button = (x, y) => `
+  const button = (x, y, dataUri) => `
   <g transform="translate(${x},${y})" filter="url(#shadow)">
     <rect x="4" y="4" width="144" height="144" rx="14" fill="url(#frame)" stroke="url(#gold)" stroke-width="8"/>
     <clipPath id="clip${x}"><rect x="18" y="18" width="116" height="116" rx="6"/></clipPath>
@@ -51,13 +57,13 @@ async function main() {
   <rect x="10" y="10" width="492" height="492" rx="92" fill="none" stroke="#5c4a26" stroke-width="4" stroke-opacity="0.8"/>
 
   <circle cx="396" cy="256" r="120" fill="url(#glowHalo)"/>
-${button(40, 180)}
+${button(40, 180, iconFrom)}
   <g filter="url(#shadow)">
     <path d="M206 236 H272 V206 L322 256 L272 306 V276 H206 Z"
           fill="url(#gold)" stroke="#3a2a0c" stroke-width="5" stroke-linejoin="round"/>
     <path d="M214 244 H266" fill="none" stroke="#fff4cc" stroke-width="3" stroke-opacity="0.7" stroke-linecap="round"/>
   </g>
-${button(320, 180)}
+${button(320, 180, iconTo)}
 </svg>
 `;
 
