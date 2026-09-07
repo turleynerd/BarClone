@@ -1,0 +1,7 @@
+package-as: BarClone
+
+manual-changelog: CHANGELOG.md
+
+ignore:
+    - branding
+    - dist

@@ -12,7 +12,7 @@ extra bars, and the stance / form / stealth bars. Each slot stores:
 - **Items** by item ID.
 - **Macros** by name, with the icon and body so they can be recreated.
 
-Profiles are account-wide (`WTF\Account\<account>\SavedVariables\BarClone.lua`),
+Profiles are account-wide (WTF\Account\<account>\SavedVariables\BarClone.lua),
 so a profile saved on one warrior can be loaded on another.
 
 ## Usage

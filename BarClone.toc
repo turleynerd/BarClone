@@ -2,9 +2,10 @@
 ## Title: BarClone
 ## Notes: Save your action bars (spells, items, macros) as named profiles and load them on any character.
 ## Author: WundrBoy
-## Version: 1.0.0
+## Version: @project-version@
 ## X-License: MIT
 ## X-Website: https://github.com/turleynerd/BarClone
+## X-Curse-Project-ID: 1686341
 ## SavedVariables: BarCloneDB
 ## IconTexture: Interface\Icons\INV_Misc_Book_09
 
