@@ -1,0 +1,10 @@
+## Interface: 20506
+## Title: BarClone
+## Notes: Save your action bars (spells, items, macros) as named profiles and load them on any character.
+## Author: WundrBoy
+## Version: 1.0.0
+## SavedVariables: BarCloneDB
+## IconTexture: Interface\Icons\INV_Misc_Book_09
+
+BarClone.lua
+BarClone_UI.lua
