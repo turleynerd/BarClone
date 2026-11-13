@@ -1,0 +1,9 @@
+{
+  "name": "barclone-tests",
+  "private": true,
+  "scripts": {
+    "syntax": "node check-syntax.js ../BarClone_Compat.lua ../BarClone.lua ../BarClone_Serialize.lua ../BarClone_UI.lua",
+    "test": "npm run syntax && node test-core.js"
+  },
+  "devDependencies": { "fengari": "^0.1.4", "luaparse": "0.3.1" }
+}

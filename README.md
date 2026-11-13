@@ -1,12 +1,21 @@
 # BarClone
 
 Save your action bars as named profiles and load them on any character.
-Built for WoW TBC Anniversary (Interface 20506).
+
+Supported clients:
+
+| Client | Interface | TOC |
+|---|---|---|
+| WoW Forever | 16001 | `BarClone_Camelot.toc` |
+| TBC Anniversary | 20506 | `BarClone.toc` |
+
+Both ship in the same zip. The game picks the right TOC on its own.
 
 ## What it saves
 
-All 120 action slots, which covers the main bar, all bar pages, the four
-extra bars, and the stance / form / stealth bars. Each slot stores:
+Every action slot: all bar pages, the extra bars, and the stance / form /
+stealth bars. That is 120 slots on TBC and 180 on Forever, which has eight
+action bars. Each slot stores:
 
 - **Spells** by spell ID, plus the name and rank as a fallback.
 - **Items** by item ID.

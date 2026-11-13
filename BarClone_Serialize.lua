@@ -12,7 +12,7 @@ local ADDON_NAME, ns = ...
 
 local FORMAT_VERSION = 1
 local PREFIX = "BC" .. FORMAT_VERSION
-local NUM_SLOTS = 120
+local NUM_SLOTS = 180 -- accept the modern 8-bar layout; the loader ignores slots the client lacks
 
 local floor = math.floor
 local strbyte, strchar, strsub, strfind = string.byte, string.char, string.sub, string.find
@@ -223,6 +223,7 @@ function ns.ExportProfile(name)
         character = p.character,
         created = p.created,
         updated = p.updated,
+        flavor = p.flavor,
         slots = p.slots,
     }
     local data = tconcat(Serialize(payload, {}))
@@ -284,6 +285,7 @@ function ns.DecodeProfile(code)
         character = type(payload.character) == "string" and payload.character or nil,
         created = type(payload.created) == "number" and payload.created or nil,
         updated = type(payload.updated) == "number" and payload.updated or nil,
+        flavor = type(payload.flavor) == "string" and payload.flavor or nil,
         slots = slots,
         counts = counts,
     }

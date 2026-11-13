@@ -1,25 +1,20 @@
 -------------------------------------------------------------------------------
 -- BarClone - core
--- Saves the 120 action slots (spells, items, macros) into named profiles that
+-- Saves the action slots (spells, items, macros) into named profiles that
 -- live in an account-wide SavedVariable, so any character can load them.
+--
+-- Client differences are handled in BarClone_Compat.lua; this file only uses
+-- the ns.* wrappers from there plus APIs that exist on every client.
 -------------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 _G.BarClone = ns
 
-local NUM_SLOTS = 120
 local DB_VERSION = 1
 local QUESTION_MARK_ICON = 134400
 local MAX_NAME_LEN = 40
 
 local MAX_ACCOUNT_MACROS = MAX_ACCOUNT_MACROS or 120
 local MAX_CHARACTER_MACROS = MAX_CHARACTER_MACROS or 18
-
--- Container API compatibility (C_Container exists on this client, but keep the fallback).
-local GetContainerNumSlots_ = (C_Container and C_Container.GetContainerNumSlots) or GetContainerNumSlots
-local GetContainerItemID_ = (C_Container and C_Container.GetContainerItemID) or GetContainerItemID
-local PickupContainerItem_ = (C_Container and C_Container.PickupContainerItem) or PickupContainerItem
-
-local PET_BOOK = BOOKTYPE_PET or "pet"
 
 -------------------------------------------------------------------------------
 -- Utilities
@@ -78,11 +73,13 @@ local function InitDB()
 end
 
 local function InitCharacter()
-    local name = UnitName("player")
-    local realm = GetRealmName()
+    local name = ns.Safe(UnitName("player"), "Player")
+    local realm = ns.Safe(GetRealmName(), "")
     ns.charName = name
-    ns.charKey = name .. "-" .. realm
-    ns.classLocalized, ns.class = UnitClass("player")
+    ns.charKey = realm ~= "" and (name .. "-" .. realm) or name
+    local localized, token = UnitClass("player")
+    ns.classLocalized = ns.Safe(localized, "?")
+    ns.class = ns.Safe(token, nil)
 end
 
 function ns.GetProfile(name)
@@ -132,11 +129,11 @@ local function CaptureSlot(slot)
 
     if actionType == "spell" then
         if not id or id == 0 then return nil end
-        local name, rank = GetSpellInfo(id)
+        local name, rank = ns.GetSpellInfo(id)
         return { type = "spell", id = id, name = name, rank = rank, sub = subType }
     elseif actionType == "item" then
         if not id or id == 0 then return nil end
-        local name = GetItemInfo(id) -- may be nil when the item is not cached; fine
+        local name = ns.GetItemName(id) -- may be nil when the item is not cached; fine
         return { type = "item", id = id, name = name }
     elseif actionType == "macro" then
         local name, icon, body = GetMacroInfo(id)
@@ -150,8 +147,8 @@ local function CaptureSlot(slot)
         }
     end
 
-    -- Anything else (companion, equipmentset, flyout...) is not expected on this
-    -- client, but keep it so the slot is at least described in the profile.
+    -- Anything else (companion, flyout, equipment set...) is kept so the slot
+    -- is at least described in the profile, even though it cannot be restored.
     return { type = actionType, id = id, sub = subType }
 end
 
@@ -163,7 +160,7 @@ function ns.SaveProfile(rawName)
     end
 
     local slots, counts = {}, { spell = 0, item = 0, macro = 0, other = 0, total = 0 }
-    for slot = 1, NUM_SLOTS do
+    for slot = 1, ns.MAX_SLOTS do
         local data = CaptureSlot(slot)
         if data then
             slots[slot] = data
@@ -181,7 +178,8 @@ function ns.SaveProfile(rawName)
     profile.class = ns.class
     profile.classLocalized = ns.classLocalized
     profile.character = ns.charKey
-    profile.level = UnitLevel("player")
+    profile.level = ns.Safe(UnitLevel("player"), nil)
+    profile.flavor = ns.FlavorName
     profile.updated = time()
     ns.db.profiles[name] = profile
 
@@ -235,24 +233,45 @@ local function CursorType()
     return (GetCursorInfo())
 end
 
-local function IsKnownSpell(id)
-    if IsSpellKnownOrOverridesKnown and IsSpellKnownOrOverridesKnown(id) then return true end
-    if IsSpellKnown and (IsSpellKnown(id) or IsSpellKnown(id, true)) then return true end
-    if IsPlayerSpell and IsPlayerSpell(id) then return true end
+local function TryPickupPetSpell(name)
+    local numPet = ns.HasPetSpells()
+    if not numPet or not name then return false end
+    for i = 1, numPet do
+        if ns.GetPetSpellName(i) == name then
+            ClearCursor()
+            ns.PickupPetSpell(i)
+            if CursorType() then
+                return true
+            end
+        end
+    end
     return false
 end
 
 local function TryPickupSpell(data, report)
-    local candidates = {}
-    if data.id and data.id > 0 and IsKnownSpell(data.id) then
-        candidates[#candidates + 1] = data.id
+    -- Pet abilities never live in the player's spellbook.
+    if data.sub == "pet" and TryPickupPetSpell(data.name) then
+        return true
+    end
+
+    local candidates, seen = {}, {}
+    local function add(id)
+        if id and id > 0 and not seen[id] then
+            seen[id] = true
+            candidates[#candidates + 1] = id
+        end
+    end
+
+    if ns.IsKnownSpell(data.id) then
+        add(data.id)
     end
     if data.name then
-        -- GetSpellInfo(name) resolves to the highest rank this character knows,
-        -- which covers lower level characters and different rank choices.
-        local knownID = select(7, GetSpellInfo(data.name))
-        if knownID and knownID ~= data.id then
-            candidates[#candidates + 1] = knownID
+        -- Highest rank of the same spell this character knows. Covers lower
+        -- level characters and clients that hand out different spell IDs.
+        add(ns.FindKnownSpellByName(data.name))
+        local _, _, _, byNameID = ns.GetSpellInfo(data.name)
+        if byNameID and ns.IsKnownSpell(byNameID) then
+            add(byNameID)
         end
     end
 
@@ -267,21 +286,8 @@ local function TryPickupSpell(data, report)
         end
     end
 
-    -- Pet abilities live in the pet spellbook; match by name.
-    if data.name then
-        local numPet = HasPetSpells()
-        if numPet then
-            for i = 1, numPet do
-                local petName = GetSpellBookItemName(i, PET_BOOK)
-                if petName == data.name then
-                    ClearCursor()
-                    PickupSpellBookItem(i, PET_BOOK)
-                    if CursorType() then
-                        return true
-                    end
-                end
-            end
-        end
+    if TryPickupPetSpell(data.name) then
+        return true
     end
 
     ClearCursor()
@@ -290,15 +296,15 @@ end
 
 local function TryPickupItem(data)
     ClearCursor()
-    PickupItem(data.id)
+    ns.PickupItem(data.id)
     if CursorType() == "item" then return true end
 
     for bag = 0, 4 do
-        local n = GetContainerNumSlots_(bag) or 0
+        local n = ns.GetContainerNumSlots(bag) or 0
         for bagSlot = 1, n do
-            if GetContainerItemID_(bag, bagSlot) == data.id then
+            if ns.GetContainerItemID(bag, bagSlot) == data.id then
                 ClearCursor()
-                PickupContainerItem_(bag, bagSlot)
+                ns.PickupContainerItem(bag, bagSlot)
                 if CursorType() == "item" then return true end
             end
         end
@@ -372,7 +378,7 @@ local function DescribeSlotData(data)
         if data.rank and data.rank ~= "" then s = s .. " (" .. data.rank .. ")" end
         return s
     elseif data.type == "item" then
-        return (data.name or GetItemInfo(data.id or 0) or ("item " .. tostring(data.id)))
+        return (data.name or ns.GetItemName(data.id) or ("item " .. tostring(data.id)))
     elseif data.type == "macro" then
         return "macro \"" .. tostring(data.name) .. "\""
     end
@@ -389,7 +395,7 @@ local function DoLoad(name)
     local report = { placed = 0, cleared = 0, skipped = {}, macrosCreated = 0, rankFallback = 0 }
 
     ClearCursor()
-    for slot = 1, NUM_SLOTS do
+    for slot = 1, ns.MAX_SLOTS do
         local data = profile.slots[slot]
         if data then
             ClearSlot(slot)
@@ -412,6 +418,12 @@ local function DoLoad(name)
     end
     ClearCursor()
 
+    -- Slots beyond this client's bars (a 180-slot profile on a 120-slot client).
+    local beyond = 0
+    for slot in pairs(profile.slots) do
+        if type(slot) == "number" and slot > ns.MAX_SLOTS then beyond = beyond + 1 end
+    end
+
     ns.db.lastLoaded = ns.db.lastLoaded or {}
     ns.db.lastLoaded[ns.charKey] = name
 
@@ -421,6 +433,9 @@ local function DoLoad(name)
     end
     if report.rankFallback > 0 then
         Print("%d spell(s) were placed using the highest rank this character knows.", report.rankFallback)
+    end
+    if beyond > 0 then
+        Print("%d slot(s) were on action bars this client does not have and were ignored.", beyond)
     end
     for _, s in ipairs(report.skipped) do
         Print("  slot %d: %s - %s", s.slot, DescribeSlotData(s.data), s.reason)
@@ -435,14 +450,18 @@ function ns.LoadProfile(name)
         Print("No profile named |cffffff00%s|r.", tostring(name))
         return false
     end
-    if InCombatLockdown() or UnitAffectingCombat("player") then
+    if InCombatLockdown() then
         ns.pendingLoad = name
         Print("You are in combat. |cffffff00%s|r will be loaded when combat ends.", name)
         return false
     end
-    if profile.class and profile.class ~= ns.class then
+    if profile.class and ns.class and profile.class ~= ns.class then
         Print("Note: |cffffff00%s|r was saved on a %s. Abilities this character does not know will be skipped.",
             name, profile.classLocalized or profile.class)
+    end
+    if profile.flavor and profile.flavor ~= ns.FlavorName then
+        Print("Note: |cffffff00%s|r was saved on %s. Spells are matched by name where the IDs differ.",
+            name, profile.flavor)
     end
     return DoLoad(name)
 end
@@ -515,6 +534,9 @@ SlashCmdList.BARCLONE = function(msg)
                     p.character or "?", p.counts and p.counts.total or 0)
             end
         end
+    elseif cmd == "version" or cmd == "ver" then
+        Print("Client: %s (Interface %d), %d action slots, %s API.",
+            ns.FlavorName, ns.tocVersion, ns.MAX_SLOTS, ns.IsModernAPI and "modern" or "classic")
     else
         ShowHelp()
     end

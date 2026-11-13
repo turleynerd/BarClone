@@ -9,6 +9,7 @@
 ## SavedVariables: BarCloneDB
 ## IconTexture: Interface\Icons\INV_Misc_Book_09
 
+BarClone_Compat.lua
 BarClone.lua
 BarClone_Serialize.lua
 BarClone_UI.lua

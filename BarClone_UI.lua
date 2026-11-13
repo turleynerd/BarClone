@@ -80,7 +80,10 @@ charText:SetJustifyH("LEFT")
 local classFilter = CreateFrame("CheckButton", "BarCloneClassFilter", frame, "UICheckButtonTemplate")
 classFilter:SetSize(24, 24)
 classFilter:SetPoint("TOPRIGHT", -110, -28)
-_G[classFilter:GetName() .. "Text"]:SetText("Only my class")
+do
+    local label = ns.CheckButtonText(classFilter)
+    if label then label:SetText("Only my class") end
+end
 classFilter:SetScript("OnClick", function(self)
     ns.db.options.onlyMyClass = self:GetChecked() and true or false
     ns.RefreshUI()
@@ -100,12 +103,43 @@ listBg:SetBackdrop({
 listBg:SetBackdropColor(0, 0, 0, 0.5)
 listBg:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
 
-local scroll = CreateFrame("ScrollFrame", "BarCloneScrollFrame", listBg, "FauxScrollFrameTemplate")
-scroll:SetPoint("TOPLEFT", 4, -4)
-scroll:SetPoint("BOTTOMRIGHT", -26, 4)
-scroll:SetScript("OnVerticalScroll", function(self, offset)
-    FauxScrollFrame_OnVerticalScroll(self, offset, ROW_HEIGHT, ns.RefreshUI)
+-- List scrolling. A plain Slider plus mouse wheel instead of FauxScrollFrame,
+-- which no longer exists on modern clients (WoW Forever).
+local listOffset = 0
+local refreshing = false
+
+local scrollBar = CreateFrame("Slider", "BarCloneListScrollBar", listBg, BackdropTemplateMixin and "BackdropTemplate" or nil)
+scrollBar:SetOrientation("VERTICAL")
+scrollBar:SetWidth(14)
+scrollBar:SetPoint("TOPRIGHT", -6, -6)
+scrollBar:SetPoint("BOTTOMRIGHT", -6, 6)
+scrollBar:SetBackdrop({
+    bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 8,
+    insets = { left = 2, right = 2, top = 2, bottom = 2 },
+})
+scrollBar:SetBackdropColor(0, 0, 0, 0.4)
+scrollBar:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+local thumb = scrollBar:GetThumbTexture()
+thumb:SetSize(14, 22)
+scrollBar:SetMinMaxValues(0, 0)
+scrollBar:SetValueStep(1)
+if scrollBar.SetObeyStepOnDrag then scrollBar:SetObeyStepOnDrag(true) end
+scrollBar:SetValue(0)
+scrollBar:SetScript("OnValueChanged", function(self, value)
+    local v = math.floor(value + 0.5)
+    if v == listOffset then return end
+    listOffset = v
+    if not refreshing then ns.RefreshUI() end
 end)
+
+local function OnListWheel(self, delta)
+    scrollBar:SetValue(scrollBar:GetValue() - delta)
+end
+listBg:EnableMouseWheel(true)
+listBg:SetScript("OnMouseWheel", OnListWheel)
 
 local emptyText = listBg:CreateFontString(nil, "ARTWORK", "GameFontDisableLarge")
 emptyText:SetPoint("CENTER")
@@ -158,9 +192,11 @@ end
 for i = 1, NUM_ROWS do
     local row = CreateFrame("Button", "BarCloneRow" .. i, listBg)
     row:SetHeight(ROW_HEIGHT)
-    row:SetPoint("TOPLEFT", scroll, "TOPLEFT", 2, -(i - 1) * ROW_HEIGHT)
-    row:SetPoint("RIGHT", scroll, "RIGHT", -2, 0)
+    row:SetPoint("TOPLEFT", listBg, "TOPLEFT", 6, -4 - (i - 1) * ROW_HEIGHT)
+    row:SetPoint("RIGHT", scrollBar, "LEFT", -4, 0)
     row:RegisterForClicks("LeftButtonUp")
+    row:EnableMouseWheel(true)
+    row:SetScript("OnMouseWheel", OnListWheel)
 
     local hl = row:CreateTexture(nil, "HIGHLIGHT")
     hl:SetAllPoints()
@@ -247,7 +283,8 @@ local function MakeCheck(name, label, optionKey, anchor, yOff)
     local cb = CreateFrame("CheckButton", name, frame, "UICheckButtonTemplate")
     cb:SetSize(24, 24)
     cb:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, yOff)
-    _G[cb:GetName() .. "Text"]:SetText(label)
+    local fs = ns.CheckButtonText(cb)
+    if fs then fs:SetText(label) end
     cb:SetScript("OnClick", function(self)
         ns.db.options[optionKey] = self:GetChecked() and true or false
     end)
@@ -345,8 +382,14 @@ function ns.RefreshUI()
         selected = nil
     end
 
-    FauxScrollFrame_Update(scroll, #names, NUM_ROWS, ROW_HEIGHT)
-    local offset = FauxScrollFrame_GetOffset(scroll)
+    local maxOffset = math.max(0, #names - NUM_ROWS)
+    refreshing = true
+    scrollBar:SetMinMaxValues(0, maxOffset)
+    if listOffset > maxOffset then listOffset = maxOffset end
+    scrollBar:SetValue(listOffset)
+    refreshing = false
+    scrollBar:SetShown(maxOffset > 0)
+    local offset = listOffset
 
     for i = 1, NUM_ROWS do
         local row = rows[i]
